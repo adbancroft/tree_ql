@@ -1,0 +1,41 @@
+start              : child_selector+
+
+child_selector     : all_children (tree_data_selector | _selector_expression | attribute_selector)+
+tree_data_selector : TREE_DATA_NAME
+TREE_DATA_NAME     : /[^@\[\/]+/
+all_children       : "/"
+
+_selector_expression: "[" (filter_expression | subscript_expression) "]"
+
+filter_expression : or_expression
+?or_expression    : (or_expression "or")? and_expression
+?and_expression   : (and_expression "and")? node_test_expression
+
+?subscript_expression : INTEGER_LITERAL -> child_index | slice_op -> slice
+!slice_op             : INTEGER_LITERAL? ":" INTEGER_LITERAL? (":" INTEGER_LITERAL)?
+
+node_test_expression : NODE_TEST_TAG _compare_op _compare_rhs
+NODE_TEST_TAG        : "@" CNAME
+_compare_op          : OP_EQUAL | OP_NOT_EQUAL | OP_LESS_THAN | OP_GREATER_THAN | OP_LESS_THAN_EQUAL | OP_GREATER_THAN_EQUAL
+_compare_rhs         : STRING_LITERAL | INTEGER_LITERAL | DECIMAL_LITERAL
+
+attribute_selector     : ATTRIBUTE_SELECTOR_TAG
+ATTRIBUTE_SELECTOR_TAG : "/"? "@" CNAME
+
+INTEGER_LITERAL : ["+"|"-"]? INT
+STRING_LITERAL  : /"[^"]*\"/ | /'[^']*\'/
+DECIMAL_LITERAL : ["+"|"-"]? DECIMAL
+
+OP_EQUAL              : "="
+OP_NOT_EQUAL          : "!="
+OP_LESS_THAN          : "<"
+OP_GREATER_THAN       : ">"
+OP_LESS_THAN_EQUAL    : "<="
+OP_GREATER_THAN_EQUAL : ">="
+
+%import common.CNAME
+%import common.INT
+%import common.DECIMAL
+%import common.WS_INLINE
+
+%ignore WS_INLINE
