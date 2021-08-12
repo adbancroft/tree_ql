@@ -24,6 +24,12 @@ Prints:
 
     ['tree_ql', 'lark', 'pathlib', 'tests', 'test_data', 'python_indenter']
 
+Full grammar is [here](https://github.com/adbancroft/tree_ql/blob/master/tree_ql/tree_ql.lark).
+
+Install via pip:
+
+    pip install git+https://github.com/adbancroft/tree_ql.git
+
 ## Why
 Lark parse trees can already be navigated using:
 
