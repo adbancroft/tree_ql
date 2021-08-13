@@ -57,56 +57,46 @@ class _inline_transformer(Transformer):
     def or_expression(self, children):
         lhs_func = children[0]
         rhs_func = children[1]
-        func = lambda input: lhs_func(input) or rhs_func(input)
-        return self.__class__._skip_if_emptyinput(func)
+        return lambda context: lhs_func(context) or rhs_func(context)
 
     def and_expression(self, children):
         lhs_func = children[0]
         rhs_func = children[1]
-        func = lambda input: lhs_func(input) and rhs_func(input)
-        return self.__class__._skip_if_emptyinput(func)
+        return lambda context: lhs_func(context) and rhs_func(context)
 
     def slice(self, children):
         slice_object = children[0]
-        func = lambda input: more_itertools.islice_extended(input)[slice_object]
-        return self.__class__._skip_if_emptyinput(func)
+        return lambda context: more_itertools.islice_extended(context)[slice_object]
 
     def node_test_expression(self, children):
         comparison_attr = children[0].value
         compare_op = children[1].value
         compare_value = children[2].value
-        func = lambda node: hasattr(node, comparison_attr) and compare_op(getattr(node, comparison_attr), compare_value)
-        return self.__class__._skip_if_emptyinput(func)
+        return lambda node: hasattr(node, comparison_attr) and compare_op(getattr(node, comparison_attr), compare_value)
 
     def filter_expression(self, children):
-        func = lambda input: (node for node in input if children[0](node)) 
-        return self.__class__._skip_if_emptyinput(func)
+        return lambda context: (node for node in context if children[0](node)) 
 
     def attribute_selector(self, children):
         attribute = children[0].value
-        func = lambda input: (getattr(node, attribute) for node in input if hasattr(node, attribute))
-        return self.__class__._skip_if_emptyinput(func)
+        return lambda context: (getattr(node, attribute) for node in context if hasattr(node, attribute))
 
     def tree_data_selector(self, children):
-        func = lambda input: (node for node in input if hasattr(node, self._tree_node_nameattr) and getattr(node, self._tree_node_nameattr)==children[0].value)
-        return self.__class__._skip_if_emptyinput(func)
+        return lambda context: (node for node in context if hasattr(node, self._tree_node_nameattr) and getattr(node, self._tree_node_nameattr)==children[0].value)
 
-    def all_children(self, children):
-        func = lambda input: more_itertools.collapse((getattr(item, self._tree_node_childattr) for item in input if hasattr(item, self._tree_node_childattr)))
-        return self.__class__._skip_if_emptyinput(func)
+    def child_context(self, children):
+        return lambda context: more_itertools.collapse((getattr(item, self._tree_node_childattr) for item in context if hasattr(item, self._tree_node_childattr)))
 
     def child_index(self, children):
         index = children[0].value
-        func = lambda input: [more_itertools.nth(input, index)] if index>=0 else more_itertools.islice_extended(input)[index:]
-        return self.__class__._skip_if_emptyinput(func)
+        return lambda context: [more_itertools.nth(context, index)] if index>=0 else more_itertools.islice_extended(context)[index:]
 
     def child_selector(self, children):
-        func = self.__class__._chain_functions(children)
-        return self.__class__._skip_if_emptyinput(func)
+        return self.__class__._chain_functions(children)
 
     def start(self, children):
-        def _to_result(input):
-            result = list(input)
+        def _to_result(context):
+            result = list(context)
             if result:
                 if len(result)==1:
                     return result[0]
@@ -114,23 +104,16 @@ class _inline_transformer(Transformer):
             return None
 
         func = self.__class__._chain_functions(children)
-        return lambda input: _to_result(func(input))
+        return lambda context: _to_result(func(context))
         
 #endregion
 
     @staticmethod
-    def _skip_if_emptyinput(func):
-        """Optimization: do no further processing if there is no input"""
-        def __skip_if_emptyinput(input):
-            return func(input) if input else input
-        return __skip_if_emptyinput
-
-    @staticmethod
     def _chain_functions(children):
-        def _chain_functions_inner(input):
+        def _chain_functions_inner(context):
             for func in children:
-                input = func(input)
-            return input        
+                context = func(context)
+            return context        
 
         if len(children)==1:
             return children[0]

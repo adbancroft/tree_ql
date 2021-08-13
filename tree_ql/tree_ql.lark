@@ -1,9 +1,9 @@
 start              : child_selector+
 
-child_selector     : all_children (tree_data_selector | _selector_expression | attribute_selector)+
+child_selector     : child_context (tree_data_selector | _selector_expression | attribute_selector)+
 tree_data_selector : TREE_DATA_NAME
 TREE_DATA_NAME     : /[^@\[\/]+/
-all_children       : "/"
+child_context      : "/"
 
 _selector_expression: "[" (filter_expression | subscript_expression) "]"
 
