@@ -21,6 +21,7 @@ setup(name='tree-ql',
       package_data={'tree_ql': ['*.lark', '*.lark.cache' ]},
       install_requires=[
           'lark-parser',
-          'more-itertools'
+          'more-itertools',
+          'python_log_indenter'
       ],
       zip_safe=False)

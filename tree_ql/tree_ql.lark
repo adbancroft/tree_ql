@@ -1,37 +1,128 @@
-start              : child_selector+
+// Modelled after XPath v1.0, http://www.w3.org/TR/xpath/ 
 
-child_selector     : all_children (tree_data_selector | _selector_expression | attribute_selector)+
-tree_data_selector : TREE_DATA_NAME
-TREE_DATA_NAME     : /[^@\[\/]+/
-all_children       : "/"
+start: location_path
 
-_selector_expression: "[" (filter_expression | subscript_expression) "]"
+?location_path        : relativelocation_path | absolutelocation_path
+absolutelocation_path : _root_location_path | _root_descendent_path
+_root_location_path   : child_step step*
+_root_descendent_path : descendent_step step*
 
-filter_expression : or_expression
-?or_expression    : (or_expression "or")? and_expression
-?and_expression   : (and_expression "and")? node_test_expression
+?relativelocation_path: _raw_step step*
 
-?subscript_expression : INTEGER_LITERAL -> child_index | slice_op -> slice
-!slice_op             : INTEGER_LITERAL? ":" INTEGER_LITERAL? (":" INTEGER_LITERAL)?
+?step                 : child_step | descendent_step
+child_step            : "/" _raw_step
+descendent_step       : "//" _raw_step
 
-node_test_expression : NODE_TEST_TAG _compare_op _compare_rhs
-NODE_TEST_TAG        : "@" CNAME
-_compare_op          : OP_EQUAL | OP_NOT_EQUAL | OP_LESS_THAN | OP_GREATER_THAN | OP_LESS_THAN_EQUAL | OP_GREATER_THAN_EQUAL
-_compare_rhs         : STRING_LITERAL | INTEGER_LITERAL | DECIMAL_LITERAL
+// These *MUST* all start with an axis specifier - even if it's the default
+_raw_step             : _raw_path_step
+                      | _raw_abbreviated_step
+                      | _raw_attribute_step
+_raw_path_step        : _axisspecifier node_test predicate*
+_raw_abbreviated_step : abbreviatedstep
+_raw_attribute_step   : null_axis_specifier attribute_step
 
-attribute_selector     : ATTRIBUTE_SELECTOR_TAG
-ATTRIBUTE_SELECTOR_TAG : "/"? "@" CNAME
+abbreviatedstep: "." -> self_axis_specifier
+// We don"t support reverse (parental) axes yet
+//              | ".." -> parent
+_axisspecifier: _axis_name "::" | default_axis_specifier
+default_axis_specifier :  // This is here to help guide transformations
+null_axis_specifier    :  // This is here to help guide transformations
+attribute_step: "@" _tname predicate*
 
+_axis_name      : child_axis_specifier
+                | descendant_axis_specifier
+                | descendant_or_self
+                | self_axis_specifier
+        //    | following
+        //    | following_sibling
+// We don"t support reverse (parental) axes yet
+//           | "ancestor"
+//           | "ancestor-or-self"
+//           | "parent"
+//           | "preceding"
+//           | "preceding-sibling"
+child_axis_specifier      : "child"
+descendant_axis_specifier : "descendant"
+descendant_or_self        : DESCENDANT_OR_SELF
+DESCENDANT_OR_SELF.2      : "descendant-or-self"
+self_axis_specifier       : "self"
+// following          : "following"
+// following_sibling  : "following-sibling"
+	   
+?path_expr   : location_path
+             | filter_expr
+           // Not sure how these would work?
+           //| filter_expr abbrev_child relativelocation_path
+           //| filter_expr abbrev_descendent relativelocation_path
+?filter_expr : primary_expr
+             | filter_expr predicate
+
+?predicate            : index_predicate | _expr_predicate
+_expr_predicate       : "[" (predicate_expr | slice_expr) "]"
+predicate_expr        : expr
+index_predicate       : INDEX_PREDICATE_TAG
+INDEX_PREDICATE_TAG.2 : "[" INTEGER_LITERAL "]"
+
+?expr            : or_expr     
+?or_expr         : (or_expr "or")? and_expr
+?and_expr        : (and_expr "and")? equality_expr
+?equality_expr   : (equality_expr _equality_op)? relational_expr
+_equality_op     : OP_EQUAL | OP_NOT_EQUAL
+?relational_expr : (relational_expr _relational_op)? additive_expr
+_relational_op   : OP_LESS_THAN | OP_GREATER_THAN | OP_LESS_THAN_EQUAL | OP_GREATER_THAN_EQUAL
+?additive_expr   : (additive_expr _additive_op)? multiply_expr
+_additive_op     : ADD_OP | MINUS_OP
+?multiply_expr   : (multiply_expr _multiply_op)? unary_expr
+_multiply_op     : MUL_OP | DIV_OP | MOD_OP
+?unary_expr      : ("-" unary_expr)? union_expr     
+?union_expr      : (union_expr "|")? path_expr
+
+?node_test         : kind_test | name_test     
+?name_test         : tname_test | wildcard_name_test
+tname_test         : _tname
+wildcard_name_test : "*"
+?kind_test         : (leaf_node_test | node_node_test) "(" ")"
+leaf_node_test     : "leaf"
+node_node_test     : "node"
+
+?primary_expr : varref
+           | parenthesized_expr
+           | _literal
+           | functioncall
+           | attribute_accessor
+		   
+varref             : "$" _tname     
+parenthesized_expr: "(" expr ")"
+attribute_accessor : "@" _tname
+
+functioncall       : _tname "(" functioncall_list? ")"
+?functioncall_list : (functioncall_list ",")? expr    
+
+// ?subscript_expression : INTEGER_LITERAL -> child_index | slice_op -> slice
+!slice_expr             : INTEGER_LITERAL? ":" INTEGER_LITERAL? (":" INTEGER_LITERAL)?
+
+_literal         : string_literal | integer_literal | decimal_literal
+integer_literal : INTEGER_LITERAL
 INTEGER_LITERAL : ["+"|"-"]? INT
-STRING_LITERAL  : /"[^"]*\"/ | /'[^']*\'/
+string_literal  : STRING_LITERAL
+STRING_LITERAL  : /"[^"]*\"/ | /"[^"]*\"/
+decimal_literal : DECIMAL_LITERAL
 DECIMAL_LITERAL : ["+"|"-"]? DECIMAL
 
-OP_EQUAL              : "="
+// tname: _tname
+_tname: CNAME
+
+OP_EQUAL              : "=="
 OP_NOT_EQUAL          : "!="
 OP_LESS_THAN          : "<"
 OP_GREATER_THAN       : ">"
 OP_LESS_THAN_EQUAL    : "<="
 OP_GREATER_THAN_EQUAL : ">="
+ADD_OP                : "+"
+MINUS_OP              : "-"
+MUL_OP                : "*"
+DIV_OP                : "div"
+MOD_OP                : "mod"
 
 %import common.CNAME
 %import common.INT
