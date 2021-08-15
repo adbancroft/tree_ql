@@ -3,17 +3,9 @@ import more_itertools
 import operator
 import logging
 from .utils import logger
+from python_log_indenter import IndentedLoggerAdapter
 
-class EnterExitLog():
-    def __init__(self, funcName):
-        self.funcName = funcName
-
-    def __enter__(self):
-        logger.debug('Started: %s' % self.funcName)
-        return self
-
-    def __exit__(self, type, value, tb):
-        pass
+logger = IndentedLoggerAdapter(logger)
 
 class query_context:
     def __init__(self, root, working_set):
@@ -82,7 +74,140 @@ class _inline_transformer(Transformer):
             return None
 
         return lambda context: _to_result(children[0](context))
-        
+
+    def absolutelocation_path(self, children):
+        remaining_terms = self.__class__._chain_functions(children)
+        func = lambda context: remaining_terms(query_context(context.root, [context.root]))
+        return self._log_wrapper(func, 'absolutelocation_path')
+
+    def relativelocation_path(self, children):
+        func = self.__class__._chain_functions(children)
+        return self._log_wrapper(func, 'relativelocation_path')
+    
+    def child_step(self, children):
+        def _step(context):
+            context = self._apply_axis_specifier(context, children[0], self.child_axis_specifier([]))
+            return self.__class__._chain_functions(children[1:])(context)
+            
+        return self._log_wrapper(self._log_indent_wrapper(_step), 'child_step')
+
+    def descendent_step(self, children):
+        def _descendent_step(context):
+            context = self._apply_axis_specifier(context, children[0], self.descendant_axis_specifier([]))
+            return self.__class__._chain_functions(children[1:])(context)            
+            
+        return self._log_wrapper(self._log_indent_wrapper(_descendent_step), 'descendent_step')
+
+    def default_axis_specifier(self, children):
+        # Use ourself as a flag value
+        return self.default_axis_specifier
+
+    def null_axis_specifier(self, children):
+        # Use ourself as a flag value
+        return self.null_axis_specifier
+
+    def child_axis_specifier(self, children):
+        func = lambda context: context.update_working_set(self._to_children(context.working_set))
+        return self._log_wrapper(func, 'child::')
+
+    def descendant_axis_specifier(self, children):
+        func = lambda context: context.update_working_set(self._all_nodes(self._to_children(context.working_set)))
+        return self._log_wrapper(func, 'descendant::')             
+
+    def self_axis_specifier(self, children):
+        func = lambda context: context
+        return self._log_wrapper(func, 'self::') 
+
+    def descendant_or_self(self, children):
+        func = lambda context: context.update_working_set(self._all_nodes(context.working_set))
+        return self._log_wrapper(func, 'descendant-or-self::') 
+
+    def attribute_step(self, children):
+        func = lambda context: context.update_working_set(getattr(item, children[0].value, None) for item in context.working_set)
+        return self._log_wrapper(func, '@')
+
+    def slice_expr(self, children):
+        def _get_first_int(children):
+            if children and children[0].type=='INTEGER_LITERAL':
+                return children[0].value
+            return None
+
+        start = _get_first_int(children)
+        children = children[(2 if start else 1):]
+        stop = _get_first_int(children)
+        children = children[(2 if stop else 1):]
+        step = _get_first_int(children)
+
+        func = lambda context: context.update_working_set(more_itertools.islice_extended(context.working_set, start, stop, step))
+        return self._log_wrapper(func, f'slice[{start}:{stop}:{step}]]') 
+
+    def predicate_expr(self, children):
+        def _item_context(current_context, item):
+            return query_context(current_context.root, [item])
+
+        expr = self._log_indent_wrapper(self.__class__._chain_functions(children))
+        func = lambda context:context.update_working_set(item for item in context.working_set if expr(_item_context(context, item)))
+        return self._log_wrapper(func, 'predicate_expr')
+
+    def index_predicate(self, children):
+        index = children[0].value
+        func = lambda context: context.update_working_set([more_itertools.nth(context.working_set, index)] if index>=0 else more_itertools.islice_extended(context.working_set)[index:])
+        return self._log_wrapper(func, f'index[{index}]') 
+
+    def tname_test(self, children):
+        compare_name = children[0].value
+        compare_func = lambda item: getattr(item, self._tree_node_nameattr, None)==compare_name
+        func = lambda context: context.update_working_set(item for item in context.working_set if compare_func(item))
+        return self._log_wrapper(func, f'tname_test: "{compare_name}"') 
+
+    def wildcard_name_test(self, children):
+        func = lambda context: context
+        return self._log_wrapper(func, '*') 
+
+    def leaf_node_test(self, children):
+        func = lambda context: context.update_working_set(item for item in context.working_set if not self._is_node(item))
+        return self._log_wrapper(func, 'leaf()') 
+
+    def node_node_test(self, children):
+        func = lambda context: context.update_working_set(item for item in context.working_set if self._is_node(item))
+        return self._log_wrapper(func, 'node()') 
+
+    def equality_expr(self, children):      
+        func = lambda context: self.__class__._evaluate(children[0], children[1].value, children[2], context.working_set[0])
+        return self._log_wrapper(self._log_indent_wrapper(func), f'equality_expr: {children[1].value.__name__}')
+
+    def or_expr(self, children):
+        lhs_func = self._log_indent_wrapper(children[0])
+        rhs_func = self._log_indent_wrapper(children[1])
+        func = lambda context: lhs_func(context) or rhs_func(context)
+        return self._log_wrapper(func, 'or_expr')
+
+    def and_expr(self, children):
+        lhs_func = self._log_indent_wrapper(children[0])
+        rhs_func = self._log_indent_wrapper(children[1])
+        func = lambda context: lhs_func(context) and rhs_func(context)
+        return self._log_wrapper(func, 'and_expr')
+
+    def attribute_accessor(self, children):
+        func = lambda item: getattr(item, children[0].value, None)
+        return self._log_wrapper(func, f'@{children[0].value}')
+
+    def string_literal(self, children):
+        func = lambda item: children[0].value
+        return self._log_wrapper(func, children[0].value)
+
+    def integer_literal(self, children):
+        func = lambda item: children[0].value
+        return self._log_wrapper(func, children[0].value)
+
+    def decimal_literal(self, children):
+        func = lambda item: children[0].value
+        return self._log_wrapper(func, children[0].value)
+
+#endregion
+
+#region Support methods
+    
     def _is_node(self, item):
         return hasattr(item, self._tree_node_childattr)
 
@@ -99,15 +224,25 @@ class _inline_transformer(Transformer):
     def _to_children(self, working_set):
         return more_itertools.collapse((getattr(item, self._tree_node_childattr) for item in working_set if self._is_node(item)))
 
-    def _wrap_function(self, func, tag):
-        def func_wrapper(*args, **kwargs):
-            with EnterExitLog(tag):
-                return func(*args, **kwargs)
+    def _log_indent_wrapper(self, func):
+        def indent_func_wrapper(*args, **kwargs):
+            logger.add()
+            result = func(*args, **kwargs)
+            logger.sub()
+            return result
 
-        if hasattr(func, 'tree_ql_tag'): return func
+        return indent_func_wrapper
+
+    def _log_wrapper(self, func, msg):
+        def func_wrapper(*args, **kwargs):
+            logger.debug(msg)
+            return func(*args, **kwargs)
+
+        if hasattr(func, 'tree_ql_tag'):
+            return func
 
         f = func_wrapper
-        f.tree_ql_tag = tag
+        f.tree_ql_tag = msg
         return f
 
     def _evaluate(lhs, op, rhs, item):
@@ -137,133 +272,6 @@ class _inline_transformer(Transformer):
             return context
         else:
             return specifier(context)
-            
-#endregion
-
-# ================= NEW
-
-#region Context rules
-
-    def absolutelocation_path(self, children):
-        remaining_terms = self.__class__._chain_functions(children)
-        func = lambda context: remaining_terms(query_context(context.root, [context.root]))
-        return self._wrap_function(func, 'absolutelocation_path')
-
-    def relativelocation_path(self, children):
-        func = self.__class__._chain_functions(children)
-        return self._wrap_function(func, 'relativelocation_path')
-    
-    def child_step(self, children):
-        def _step(context):
-            context = self._apply_axis_specifier(context, children[0], self.child_axis_specifier([]))
-            return self.__class__._chain_functions(children[1:])(context)
-            
-        return self._wrap_function(_step, 'child_step')
-
-    def descendent_step(self, children):
-        def _descendent_step(context):
-            context = self._apply_axis_specifier(context, children[0], self.descendant_axis_specifier([]))
-            return self.__class__._chain_functions(children[1:])(context)            
-            
-        return self._wrap_function(_descendent_step, 'descendent_step')
-
-    def default_axis_specifier(self, children):
-        # Use ourself as a flag value
-        return self.default_axis_specifier
-
-    def null_axis_specifier(self, children):
-        # Use ourself as a flag value
-        return self.null_axis_specifier
-
-    def child_axis_specifier(self, children):
-        func = lambda context: context.update_working_set(self._to_children(context.working_set))
-        return self._wrap_function(func, 'child_axis_specifier')
-
-    def descendant_axis_specifier(self, children):
-        func = lambda context: context.update_working_set(self._all_nodes(self._to_children(context.working_set)))
-        return self._wrap_function(func, 'descendant_axis_specifier')             
-
-    def self_axis_specifier(self, children):
-        func = lambda context: context
-        return self._wrap_function(func, 'self_axis_specifier') 
-
-    def descendant_or_self(self, children):
-        func = lambda context: context.update_working_set(self._all_nodes(context.working_set))
-        return self._wrap_function(func, 'descendant_or_self') 
-
-    def attribute_step(self, children):
-        func = lambda context: context.update_working_set(getattr(item, children[0].value, None) for item in context.working_set)
-        return self._wrap_function(func, 'attribute_step')
-
-    def slice_expr(self, children):
-        def _get_first_int(children):
-            if children and children[0].type=='INTEGER_LITERAL':
-                return children[0].value
-            return None
-
-        start = _get_first_int(children)
-        children = children[(2 if start else 1):]
-        stop = _get_first_int(children)
-        children = children[(2 if stop else 1):]
-        step = _get_first_int(children)
-
-        func = lambda context: context.update_working_set(more_itertools.islice_extended(context.working_set, start, stop, step))
-        return self._wrap_function(func, 'slice_expr') 
-
-    def predicate_expr(self, children):
-        def _item_context(current_context, item):
-            return query_context(current_context.root, [item])
-
-        expr = self.__class__._chain_functions(children)
-        func = lambda context:context.update_working_set(item for item in context.working_set if expr(_item_context(context, item)))
-        return self._wrap_function(func, 'predicate_expr')
-
-    def index_predicate(self, children):
-        index = children[0].value
-        func = lambda context: context.update_working_set([more_itertools.nth(context.working_set, index)] if index>=0 else more_itertools.islice_extended(context.working_set)[index:])
-        return self._wrap_function(func, 'index_predicate') 
-#end region
-
-#region item tests
-
-    def tname_test(self, children):
-        compare_name = children[0].value
-        compare_func = lambda item: getattr(item, self._tree_node_nameattr, None)==compare_name
-        func = lambda context: context.update_working_set(item for item in context.working_set if compare_func(item))
-        return self._wrap_function(func, 'tname_test') 
-
-    def wildcard_name_test(self, children):
-        func = lambda context: context
-        return self._wrap_function(func, 'wildcard_name_test') 
-
-    def leaf_node_test(self, children):
-        func = lambda context: context.update_working_set(item for item in context.working_set if not self._is_node(item))
-        return self._wrap_function(func, 'leaf_node_test') 
-
-    def node_node_test(self, children):
-        func = lambda context: context.update_working_set(item for item in context.working_set if self._is_node(item))
-        return self._wrap_function(func, 'leaf_node_test') 
-
-    def equality_expr(self, children):      
-        func = lambda context: self.__class__._evaluate(children[0], children[1].value, children[2], context.working_set[0])
-        return self._wrap_function(func, 'equality_expr')
-
-    def or_expr(self, children):
-        lhs_func = children[0]
-        rhs_func = children[1]
-        func = lambda context: lhs_func(context) or rhs_func(context)
-        return self._wrap_function(func, 'or_expr')
-
-    def and_expr(self, children):
-        lhs_func = children[0]
-        rhs_func = children[1]
-        func = lambda context: lhs_func(context) and rhs_func(context)
-        return self._wrap_function(func, 'and_expr')
-
-    def attribute_accessor(self, children):
-        func = lambda item: getattr(item, children[0].value, None)
-        return self._wrap_function(func, 'attribute_accessor')
-
 #endregion
 
 from pathlib import Path
