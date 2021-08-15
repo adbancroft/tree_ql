@@ -16,6 +16,10 @@ class query_context:
         self.working_set = list(new_set)
         return self
 
+    def __bool__(self):
+        """For predicates - anything in the workinf set implies True"""
+        return True if self.working_set else False
+
 class _inline_transformer(Transformer):
     
     def __init__(self, tree_node_nameattr, tree_node_childattr):

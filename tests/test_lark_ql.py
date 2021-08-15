@@ -172,5 +172,15 @@ class test_lark_ql(unittest.TestCase):
         for r in result:
             self.assertEqual('file', r.value) 
 
+    def test_sub_query(self):
+        subject = LarkQuery('/classdef/self::*[.//funcdef/descendant::*[@value=="__exit__"]]')# and @value=="__exit__"]]')
+        # subject = LarkQuery('/classdef//funcdef//descendant::*[@value=="__exit__"]')# and @value=="__exit__"]]')
+        result = subject.execute(_TEST_TREE)
+        self.assertEqual(len(result), 2)
+        self.assertEqual('classdef', result[0].data)
+        self.assertEqual('classdef', result[0].data)
+        self.assertEqual('Aifc_read', result[0].children[0].value)
+        self.assertEqual('Aifc_write', result[1].children[0].value)
+
 if __name__ == '__main__':
     unittest.main()
