@@ -80,15 +80,19 @@ class _inline_transformer(Transformer):
         return lambda context: _to_result(children[0](context))
 
     def absolutelocation_path(self, children):
+        """Reset to use the root of the tree"""
         remaining_terms = self.__class__._chain_functions(children)
         func = lambda context: remaining_terms(query_context(context.root, [context.root]))
         return self._log_wrapper(func, 'absolutelocation_path')
 
     def relativelocation_path(self, children):
+        """Apply this tree to the working set"""
         func = self.__class__._chain_functions(children)
         return self._log_wrapper(func, 'relativelocation_path')
     
     def child_step(self, children):
+        """Navigate one level down the tree I.e. "\". 
+        We need to apply the default axes (child) if not explicitly set"""
         def _step(context):
             context = self._apply_axis_specifier(context, children[0], self.child_axis_specifier([]))
             return self.__class__._chain_functions(children[1:])(context)
@@ -96,6 +100,8 @@ class _inline_transformer(Transformer):
         return self._log_wrapper(self._log_indent_wrapper(_step), 'child_step')
 
     def descendent_step(self, children):
+        """Navigate to all items in the tree starting at from teh workign set I.e."\\"
+        We need to apply the default axes (descendant) if not explicitly set"""
         def _descendent_step(context):
             context = self._apply_axis_specifier(context, children[0], self.descendant_axis_specifier([]))
             return self.__class__._chain_functions(children[1:])(context)            
@@ -103,34 +109,42 @@ class _inline_transformer(Transformer):
         return self._log_wrapper(self._log_indent_wrapper(_descendent_step), 'descendent_step')
 
     def default_axis_specifier(self, children):
+        """Set in the grammar as a gudie for this transformer"""
         # Use ourself as a flag value
         return self.default_axis_specifier
 
     def null_axis_specifier(self, children):
+        """Set in the grammar as a gudie for this transformer"""
         # Use ourself as a flag value
         return self.null_axis_specifier
 
     def child_axis_specifier(self, children):
+        """Swap the working set for all child nodes of the working set"""
         func = lambda context: context.update_working_set(self._to_children(context.working_set))
         return self._log_wrapper(func, 'child::')
 
     def descendant_axis_specifier(self, children):
+        """Swap the working set for all descendants of the working set"""
         func = lambda context: context.update_working_set(self._all_nodes(self._to_children(context.working_set)))
         return self._log_wrapper(func, 'descendant::')             
 
     def self_axis_specifier(self, children):
+        """Reference self - so-op"""
         func = lambda context: context
         return self._log_wrapper(func, 'self::') 
 
     def descendant_or_self(self, children):
+        """Add all descendants of the working set to it"""
         func = lambda context: context.update_working_set(self._all_nodes(context.working_set))
         return self._log_wrapper(func, 'descendant-or-self::') 
 
     def attribute_step(self, children):
+        """Get an attribute value as part of a path. I.e. /@foo"""
         func = lambda context: context.update_working_set(getattr(item, children[0].value, None) for item in context.working_set)
         return self._log_wrapper(func, '@')
 
     def slice_expr(self, children):
+        """Python slice of the working set"""
         def _get_first_int(children):
             if children and children[0].type=='INTEGER_LITERAL':
                 return children[0].value
@@ -146,7 +160,12 @@ class _inline_transformer(Transformer):
         return self._log_wrapper(func, f'slice[{start}:{stop}:{step}]]') 
 
     def predicate_expr(self, children):
+        """A non-slice predicate. I.e [some expression]
+        This will filter items in the working set"""
+
         def _item_context(current_context, item):
+            """For the recrsive grammar to work, we need a new working set containing
+            just the item being tested."""
             return query_context(current_context.root, [item])
 
         expr = self._log_indent_wrapper(self.__class__._chain_functions(children))
@@ -154,45 +173,54 @@ class _inline_transformer(Transformer):
         return self._log_wrapper(func, 'predicate_expr')
 
     def index_predicate(self, children):
+        """ [<int>] """
         index = children[0].value
         func = lambda context: context.update_working_set([more_itertools.nth(context.working_set, index)] if index>=0 else more_itertools.islice_extended(context.working_set)[index:])
         return self._log_wrapper(func, f'index[{index}]') 
 
     def tname_test(self, children):
+        """Test node (not leafs) names in the working set"""
         compare_name = children[0].value
         compare_func = lambda item: getattr(item, self._tree_node_nameattr, None)==compare_name
         func = lambda context: context.update_working_set(item for item in context.working_set if compare_func(item))
         return self._log_wrapper(func, f'tname_test: "{compare_name}"') 
 
     def wildcard_name_test(self, children):
+        """All items: no-op"""
         func = lambda context: context
         return self._log_wrapper(func, '*') 
 
     def leaf_node_test(self, children):
+        """Keep the leaf nodes in the working set"""
         func = lambda context: context.update_working_set(item for item in context.working_set if not self._is_node(item))
         return self._log_wrapper(func, 'leaf()') 
 
     def node_node_test(self, children):
+        """Keep the tree nodes in the working set"""
         func = lambda context: context.update_working_set(item for item in context.working_set if self._is_node(item))
         return self._log_wrapper(func, 'node()') 
 
-    def equality_expr(self, children):      
-        func = lambda context: self.__class__._evaluate(children[0], children[1].value, children[2], context.working_set[0])
+    def equality_expr(self, children):
+        """Execute an (in)equality expression"""
+        func = lambda context: children[1].value(children[0](context.working_set[0]), children[2](context.working_set[0]))
         return self._log_wrapper(self._log_indent_wrapper(func), f'equality_expr: {children[1].value.__name__}')
 
     def or_expr(self, children):
+        """Boolean or"""
         lhs_func = self._log_indent_wrapper(children[0])
         rhs_func = self._log_indent_wrapper(children[1])
         func = lambda context: lhs_func(context) or rhs_func(context)
         return self._log_wrapper(func, 'or_expr')
 
     def and_expr(self, children):
+        """Boolean and"""
         lhs_func = self._log_indent_wrapper(children[0])
         rhs_func = self._log_indent_wrapper(children[1])
         func = lambda context: lhs_func(context) and rhs_func(context)
         return self._log_wrapper(func, 'and_expr')
 
     def attribute_accessor(self, children):
+        """Get an attribute value as part of an expression"""
         func = lambda item: getattr(item, children[0].value, None)
         return self._log_wrapper(func, f'@{children[0].value}')
 
@@ -248,14 +276,6 @@ class _inline_transformer(Transformer):
         f = func_wrapper
         f.tree_ql_tag = msg
         return f
-
-    def _evaluate(lhs, op, rhs, item):
-        def to_value(maybe_value, item):
-            if callable(maybe_value):
-                return maybe_value(item)
-            else:
-                return maybe_value.children[0].value
-        return op(to_value(lhs, item), to_value(rhs, item))
 
     @staticmethod
     def _chain_functions(children):
