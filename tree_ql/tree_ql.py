@@ -21,7 +21,7 @@ class query_context:
         self.working_set = working_set
 
     def update_working_set(self, new_set):
-        self.working_set = new_set
+        self.working_set = list(new_set)
         return self
 
 class _inline_transformer(Transformer):
@@ -130,6 +130,14 @@ class _inline_transformer(Transformer):
         else:
             return _chain_functions_inner
 
+    def _apply_axis_specifier(self, context, specifier, default):
+        if specifier==self.default_axis_specifier:
+            return default(context)
+        elif specifier==self.null_axis_specifier:
+            return context
+        else:
+            return specifier(context)
+            
 #endregion
 
 # ================= NEW
@@ -147,27 +155,25 @@ class _inline_transformer(Transformer):
     
     def child_step(self, children):
         def _step(context):
-            mutable_children = children
-            if mutable_children[0]==self.default_axis_specifier:
-                context = self.child_axis_specifier([])(context)
-                mutable_children = mutable_children[1:]
-            return self.__class__._chain_functions(mutable_children)(context)
+            context = self._apply_axis_specifier(context, children[0], self.child_axis_specifier([]))
+            return self.__class__._chain_functions(children[1:])(context)
             
         return self._wrap_function(_step, 'child_step')
 
     def descendent_step(self, children):
         def _descendent_step(context):
-            mutable_children = children
-            if mutable_children[0]==self.default_axis_specifier:
-                context = self.descendant_axis_specifier([])(context)
-                mutable_children = mutable_children[1:]
-            return self.__class__._chain_functions(mutable_children)(context)
+            context = self._apply_axis_specifier(context, children[0], self.descendant_axis_specifier([]))
+            return self.__class__._chain_functions(children[1:])(context)            
             
         return self._wrap_function(_descendent_step, 'descendent_step')
 
     def default_axis_specifier(self, children):
         # Use ourself as a flag value
         return self.default_axis_specifier
+
+    def null_axis_specifier(self, children):
+        # Use ourself as a flag value
+        return self.null_axis_specifier
 
     def child_axis_specifier(self, children):
         func = lambda context: context.update_working_set(self._to_children(context.working_set))
@@ -205,8 +211,11 @@ class _inline_transformer(Transformer):
         return self._wrap_function(func, 'slice_expr') 
 
     def predicate_expr(self, children):
+        def _item_context(current_context, item):
+            return query_context(current_context.root, [item])
+
         expr = self.__class__._chain_functions(children)
-        func = lambda context:context.update_working_set(item for item in context.working_set if expr(item))
+        func = lambda context:context.update_working_set(item for item in context.working_set if expr(_item_context(context, item)))
         return self._wrap_function(func, 'predicate_expr')
 
     def index_predicate(self, children):
@@ -236,19 +245,19 @@ class _inline_transformer(Transformer):
         return self._wrap_function(func, 'leaf_node_test') 
 
     def equality_expr(self, children):      
-        func = lambda item: self.__class__._evaluate(children[0], children[1].value, children[2], item)
+        func = lambda context: self.__class__._evaluate(children[0], children[1].value, children[2], context.working_set[0])
         return self._wrap_function(func, 'equality_expr')
 
     def or_expr(self, children):
         lhs_func = children[0]
         rhs_func = children[1]
-        func = lambda item: lhs_func(item) or rhs_func(item)
+        func = lambda context: lhs_func(context) or rhs_func(context)
         return self._wrap_function(func, 'or_expr')
 
     def and_expr(self, children):
         lhs_func = children[0]
         rhs_func = children[1]
-        func = lambda item: lhs_func(item) and rhs_func(item)
+        func = lambda context: lhs_func(context) and rhs_func(context)
         return self._wrap_function(func, 'and_expr')
 
     def attribute_accessor(self, children):
