@@ -2,64 +2,61 @@
 
 start: location_path
 
-?location_path: relativelocation_path
-           | absolutelocation_path
-absolutelocation_path: _root_location_path
-           | _root_descendent_path
-_root_location_path      : child_step step*
+?location_path        : relativelocation_path | absolutelocation_path
+absolutelocation_path : _root_location_path | _root_descendent_path
+_root_location_path   : child_step step*
 _root_descendent_path : descendent_step step*
 
-?relativelocation_path: bare_step
-           | relativelocation_path step
-?bare_step: _abbreviated_step
-?step           : child_step | descendent_step
-child_step     : "/" (_step | attribute_step)
-descendent_step: "//" (_step | attribute_step)
+?relativelocation_path: bare_step relativelocation_path step
+?bare_step            : _abbreviated_step
+?step                 : child_step | descendent_step
+child_step            : "/" (_step | attribute_step)
+descendent_step       : "//" (_step | attribute_step)
 
-_step     : (axis_specifier node_test _predicate_list) | _abbreviated_step
-?axis_specifier: _axis_name "::"
-_axis_name : child_axis_specifier
-           | descendant_axis_specifier
-           | descendant_or_self
+_step           : (axis_specifier node_test _predicate_list) | _abbreviated_step
+?axis_specifier : _axis_name "::"
+_axis_name      : child_axis_specifier
+                | descendant_axis_specifier
+                | descendant_or_self
+                | self_axis_specifier
         //    | following
         //    | following_sibling
-           | self_axis_specifier
 // We don"t support reverse (parental) axes yet
 //           | "ancestor"
 //           | "ancestor-or-self"
 //           | "parent"
 //           | "preceding"
 //           | "preceding-sibling"
-child_axis_specifier              : "child"
-descendant_axis_specifier         : "descendant"
-descendant_or_self : DESCENDANT_OR_SELF
-DESCENDANT_OR_SELF.2: "descendant-or-self"
+child_axis_specifier      : "child"
+descendant_axis_specifier : "descendant"
+descendant_or_self        : DESCENDANT_OR_SELF
+DESCENDANT_OR_SELF.2      : "descendant-or-self"
+self_axis_specifier       : "self"
 // following          : "following"
 // following_sibling  : "following-sibling"
-self_axis_specifier               : "self"
 
-_abbreviated_step : (default_axis_specifier node_test)
-default_axis_specifier            :
-attribute_step               : "@" CNAME
+_abbreviated_step      : (default_axis_specifier node_test)
+default_axis_specifier :  // This is here to help guide transformations
+attribute_step         : "@" CNAME
+contextitem_expr       :  "." -> self
 // We don"t support reverse (parental) axes yet
 //                 | parentitem_expr
 //parentitem_expr  : ".."
-contextitem_expr:  "." -> self
 	   
-?path_expr : location_path
-           | filter_expr
+?path_expr   : location_path
+             | filter_expr
            // Not sure how these would work?
            //| filter_expr abbrev_child relativelocation_path
            //| filter_expr abbrev_descendent relativelocation_path
 ?filter_expr : primary_expr
-           | filter_expr predicate
+             | filter_expr predicate
 
-_predicate_list        : predicate*
-?predicate        : index_predicate | _expr_predicate
-_expr_predicate    : "[" (predicate_expr | slice_expr) "]"
-predicate_expr   : expr
-index_predicate: INDEX_PREDICATE_TAG
-INDEX_PREDICATE_TAG.2: "[" INTEGER_LITERAL "]"
+_predicate_list       : predicate*
+?predicate            : index_predicate | _expr_predicate
+_expr_predicate       : "[" (predicate_expr | slice_expr) "]"
+predicate_expr        : expr
+index_predicate       : INDEX_PREDICATE_TAG
+INDEX_PREDICATE_TAG.2 : "[" INTEGER_LITERAL "]"
 
 ?expr            : or_expr     
 ?or_expr         : (or_expr "or ")? and_expr
