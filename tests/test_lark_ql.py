@@ -158,18 +158,19 @@ class test_lark_ql(unittest.TestCase):
         self.assertEqual(result[0], '_read_long')
         self.assertEqual(result[12], 'open')
 
-    # def test_or(self):
-    #     subject = LarkQuery('/[@data="classdef" or @data="funcdef"]')
-    #     result = subject.execute(_TEST_TREE)
-    #     self.assertEqual(len(result), 16)
-    #     self.assertEqual(result[0].children[0].value, 'Error')
-    #     self.assertEqual(result[15].children[0].value, 'open')
+    def test_or(self):
+        subject = LarkQuery('/child::*[@data=="classdef" or @data=="funcdef"]')
+        result = subject.execute(_TEST_TREE)
+        self.assertEqual(len(result), 16)
+        self.assertEqual(result[0].children[0].value, 'Error')
+        self.assertEqual(result[15].children[0].value, 'open')
 
-    # def test_and(self):
-    #     subject = LarkQuery('/funcdef/parameters/[@type="NAME" and @value="file"]')
-    #     result = subject.execute(_TEST_TREE)
-    #     self.assertEqual(len(result), 5)
-    #     self.assertEqual(result[0].value, 'file')
+    def test_and(self):
+        subject = LarkQuery('/funcdef/parameters/child::*[@type=="NAME" and @value=="file"]')
+        result = subject.execute(_TEST_TREE)
+        self.assertEqual(len(result), 5)
+        for r in result:
+            self.assertEqual('file', r.value) 
 
 if __name__ == '__main__':
     unittest.main()

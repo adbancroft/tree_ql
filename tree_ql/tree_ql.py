@@ -64,10 +64,6 @@ class _inline_transformer(Transformer):
         return token.update(value=operator.truediv)       
     def MOD_OP(self, token):
         return token.update(value=operator.mod)       
-    # def NODE_TEST_TAG(self, token):
-    #     return token.update(value=token.value.lstrip('@'))
-    def ATTRIBUTE_SELECTOR_TAG(self, token):
-        return token.update(value=token.value.lstrip('@'))
     def INDEX_PREDICATE_TAG(self, token):
         return token.update(value=int(token.value.lstrip('[').rstrip(']')))
 
@@ -75,42 +71,6 @@ class _inline_transformer(Transformer):
 
     # 'Compiles' the query
 #region rule_processing
-
-    # def or_expression(self, children):
-    #     lhs_func = children[0]
-    #     rhs_func = children[1]
-    #     return lambda context: lhs_func(context) or rhs_func(context)
-
-    # def and_expression(self, children):
-    #     lhs_func = children[0]
-    #     rhs_func = children[1]
-    #     return lambda context: lhs_func(context) and rhs_func(context)
-
-    # def node_test_expression(self, children):
-    #     comparison_attr = children[0].value
-    #     compare_op = children[1].value
-    #     compare_value = children[2].value
-    #     return lambda node: hasattr(node, comparison_attr) and compare_op(getattr(node, comparison_attr), compare_value)
-
-    # def filter_expression(self, children):
-    #     return lambda context: (node for node in context if children[0](node)) 
-
-    # def attribute_selector(self, children):
-    #     attribute = children[0].value
-    #     return lambda context: (getattr(node, attribute) for node in context if hasattr(node, attribute))
-
-    # def tree_data_selector(self, children):
-    #     return lambda context: (node for node in context if hasattr(node, self._tree_node_nameattr) and getattr(node, self._tree_node_nameattr)==children[0].value)
-
-    # def child_context(self, children):
-    #     return lambda context: more_itertools.collapse((self._to_children(item) for item in context.working_set))
-
-    # def child_index(self, children):
-    #     index = children[0].value
-    #     return lambda context: [more_itertools.nth(context, index)] if index>=0 else more_itertools.islice_extended(context)[index:]
-
-    # def child_selector(self, children):
-    #     return self.__class__._chain_functions(children)
 
     def start(self, children):
         def _to_result(context):
@@ -123,10 +83,6 @@ class _inline_transformer(Transformer):
 
         return lambda context: _to_result(children[0](context))
         
-#endregion
-
-#region Rule processing support
-
     def _is_node(self, item):
         return hasattr(item, self._tree_node_childattr)
 
@@ -257,7 +213,6 @@ class _inline_transformer(Transformer):
         index = children[0].value
         func = lambda context: context.update_working_set([more_itertools.nth(context.working_set, index)] if index>=0 else more_itertools.islice_extended(context.working_set)[index:])
         return self._wrap_function(func, 'index_predicate') 
-
 #end region
 
 #region item tests
@@ -283,6 +238,18 @@ class _inline_transformer(Transformer):
     def equality_expr(self, children):      
         func = lambda item: self.__class__._evaluate(children[0], children[1].value, children[2], item)
         return self._wrap_function(func, 'equality_expr')
+
+    def or_expr(self, children):
+        lhs_func = children[0]
+        rhs_func = children[1]
+        func = lambda item: lhs_func(item) or rhs_func(item)
+        return self._wrap_function(func, 'or_expr')
+
+    def and_expr(self, children):
+        lhs_func = children[0]
+        rhs_func = children[1]
+        func = lambda item: lhs_func(item) and rhs_func(item)
+        return self._wrap_function(func, 'and_expr')
 
     def attribute_accessor(self, children):
         func = lambda item: getattr(item, children[0].value, None)

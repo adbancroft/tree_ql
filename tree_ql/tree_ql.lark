@@ -14,6 +14,14 @@ child_step            : "/" (_step | attribute_step)
 descendent_step       : "//" (_step | attribute_step)
 
 _step           : (axis_specifier node_test _predicate_list) | _abbreviated_step
+_abbreviated_step      : (default_axis_specifier node_test)
+default_axis_specifier :  // This is here to help guide transformations
+attribute_step         : "@" CNAME
+contextitem_expr       :  "." -> self
+// We don"t support reverse (parental) axes yet
+//                 | parentitem_expr
+//parentitem_expr  : ".."
+
 ?axis_specifier : _axis_name "::"
 _axis_name      : child_axis_specifier
                 | descendant_axis_specifier
@@ -34,14 +42,6 @@ DESCENDANT_OR_SELF.2      : "descendant-or-self"
 self_axis_specifier       : "self"
 // following          : "following"
 // following_sibling  : "following-sibling"
-
-_abbreviated_step      : (default_axis_specifier node_test)
-default_axis_specifier :  // This is here to help guide transformations
-attribute_step         : "@" CNAME
-contextitem_expr       :  "." -> self
-// We don"t support reverse (parental) axes yet
-//                 | parentitem_expr
-//parentitem_expr  : ".."
 	   
 ?path_expr   : location_path
              | filter_expr
@@ -59,7 +59,7 @@ index_predicate       : INDEX_PREDICATE_TAG
 INDEX_PREDICATE_TAG.2 : "[" INTEGER_LITERAL "]"
 
 ?expr            : or_expr     
-?or_expr         : (or_expr "or ")? and_expr
+?or_expr         : (or_expr "or")? and_expr
 ?and_expr        : (and_expr "and")? equality_expr
 ?equality_expr   : (equality_expr _equality_op)? relational_expr
 _equality_op     : OP_EQUAL | OP_NOT_EQUAL
